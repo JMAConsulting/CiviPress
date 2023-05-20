@@ -1,0 +1,30 @@
+---
+- name: restart nginx
+  service: name=nginx state=restarted
+
+- name: reload nginx
+  service: name=nginx state=reloaded
+
+- name: restart apache2
+  service: name=apache2 state=restarted
+
+- name: restart mysql
+  service: name=mysql state=restarted
+
+- name: restart php7.0-fpm
+  service: name=php7.0-fpm state=restarted
+
+- name: restart php7.1-fpm
+  service: name=php7.1-fpm state=restarted
+
+- name: restart php7.2-fpm
+  service: name=php7.2-fpm state=restarted
+
+- name: restart php7.3-fpm
+  service: name=php7.3-fpm state=restarted
+
+- name: restart php7.4-fpm
+  service: name=php7.4-fpm state=restarted
+
+- name: reload systemd
+  systemd: daemon_reload=yes

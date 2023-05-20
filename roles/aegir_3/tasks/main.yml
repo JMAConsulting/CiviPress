@@ -1,0 +1,524 @@
+---
+# Installs Aegir3 (http://www.aegirproject.org)
+# Assumes Debian, with MariaDB, Nginx, php-fpm
+
+- name: "Gather facts"
+  gather_facts:
+    parallel: yes
+  tags:
+    - packages
+    - packages-php
+    - aegir-php
+
+- include_vars: "{{ ansible_distribution }}_{{ ansible_distribution_major_version }}.yml"
+  when: phpversion is undefined
+  tags:
+    - packages
+    - packages-php
+    - aegir-php
+
+- name: Add the aegir user to the admin group
+  user: name="aegir"
+        groups=adm
+        append=yes
+  tags:
+    - aegir
+    - aegir-adm
+
+- name: Download provision_symbiotic from Github
+  become_user: aegir
+  git: repo=https://github.com/coopsymbiotic/provision_symbiotic.git
+       version=master
+       dest=/var/aegir/.drush/provision_symbiotic
+       update=yes
+  tags:
+    - aegir-provision-symbiotic
+
+- name: Download provision_customhtaccess from Github
+  become_user: aegir
+  git: repo=https://github.com/mlutfy/provision_customhtaccess.git
+       version=master
+       dest=/var/aegir/.drush/provision_customhtaccess
+       update=yes
+  tags:
+    - aegir-provision-customhtaccess
+
+##
+## Update hosting_civicrm from git
+##
+- name: Get Hostmaster root directory
+  become: true
+  become_user: aegir
+  shell: "drush @hostmaster status | grep 'Drupal root' | awk '{ print $4 }'"
+  register: hostmaster_root
+  tags:
+    - aegir-hosting-civicrm
+    - aegir-hosting-civicrm-ansible
+    - aegir-hosting-https
+    - aegir-hosting-wordpress
+    - aegir-civicrm-platform
+    - aegir-fixownership
+
+# Unless we check if it's already a git repo, in most cases it's static
+# since it has been updated by the aegir3 debian packages.
+- name: Delete the old hosting_civicrm directory
+  file: path="{{ hostmaster_root.stdout }}/profiles/hostmaster/modules/aegir/hosting_civicrm" state=absent
+  tags:
+    - aegir-hosting-civicrm
+
+- name: Deploy latest hosting_civicrm from Git
+  become: true
+  become_user: aegir
+  git: repo=https://git.drupal.org/project/hosting_civicrm.git
+       version=7.x-3.x
+       dest="{{ hostmaster_root.stdout }}/profiles/hostmaster/modules/aegir/hosting_civicrm"
+       update=yes
+       force=yes
+  ignore_errors: yes
+  tags:
+    - aegir-hosting-civicrm
+    - aegir-hosting-civicrm-ansible
+
+- name: Flush Hostmaster cache
+  become: true
+  become_user: aegir
+  shell: "drush @hostmaster cc all"
+  tags:
+    - aegir-hosting-civicrm
+
+##
+## Deploy hosting_wordpress
+##
+- name: Deploy latest hosting_wordpress from Git
+  become: true
+  become_user: aegir
+  git: repo=https://github.com/mlutfy/hosting_wordpress.git
+       version=7.x-3.x
+       dest="{{ hostmaster_root.stdout }}/sites/{{ inventory_hostname }}/modules/hosting_wordpress"
+       update=yes
+  ignore_errors: yes
+  tags:
+    - aegir-hosting-wordpress
+
+- name: Install wp-cli
+  get_url:
+    url: "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+    dest: /usr/local/bin/wp
+    mode: '0755'
+  tags:
+    - aegir-hosting-wordpress
+
+##
+## Deploy hosting_civicrm_ansible
+##
+- name: Deploy latest hosting_civicrm_ansible from Git
+  become: true
+  become_user: aegir
+  git: repo=https://github.com/coopsymbiotic/hosting_civicrm_ansible.git
+       version=master
+       dest="{{ hostmaster_root.stdout }}/sites/{{ inventory_hostname }}/modules/hosting_civicrm_ansible"
+       update=yes
+  ignore_errors: yes
+  tags:
+    - aegir-hosting-civicrm-ansible
+
+##
+## Configurations
+##
+- name: Aegir modules | Enable a few extra Aegir modules
+  shell: "drush @hostmaster en hosting_https hosting_letsencrypt hosting_alias hosting_clone hosting_tasks_extra hosting_remote_import hosting_civicrm_cron hosting_civicrm hosting_civicrm_ansible hosting_wpsite -y"
+  become: true
+  become_user: aegir
+  tags:
+    - aegir-hosting-https
+    - aegir-hosting-civicrm
+    - aegir-hosting-wordpress
+
+- name: Aegir modules | Enable hosting_nginx_https
+  shell: "drush @hostmaster en hosting_nginx_https -y"
+  become: true
+  become_user: aegir
+  when: "'aegir_apache' not in group_names"
+  tags:
+    - aegir-hosting-https
+
+- name: Aegir modules | Enable hosting_apache_https
+  shell: "drush @hostmaster en hosting_apache_https -y"
+  become: true
+  become_user: aegir
+  when: "'aegir_apache' in group_names"
+  tags:
+    - aegir-hosting-https
+
+- name: Aegir modules | Disable the annoying Drupal overlay
+  shell: "drush @hostmaster dis overlay -y"
+  become: true
+  become_user: aegir
+
+- name: Aegir settings | Enable Aegir queue process
+  shell: "drush @hostmaster vset hosting_feature_queued 1"
+  become: true
+  become_user: aegir
+  tags:
+    - aegir-settings
+
+- name: Aegir settings | Set CiviCRM default cron interval to 15 mins
+  shell: "drush @hostmaster vset hosting_civicrm_cron_default_interval 900"
+  become: true
+  become_user: aegir
+  tags:
+    - aegir-settings
+
+- name: Aegir settings | Misc other settings
+  become: true
+  become_user: aegir
+  shell: "drush @hostmaster vset {{ item.name }} {{ item.value }}"
+  with_items:
+    - { name: 'hosting_feature_git', value: '1' }
+    - { name: 'hosting_feature_git_pull', value: '1' }
+    - { name: 'hosting_feature_http_basic_auth', value: '1' }
+    - { name: 'hosting_feature_migrate', value: '1' }
+    - { name: 'hosting_feature_remote_import', value: '1' }
+    - { name: 'hosting_feature_fix_ownership', value: '1' }
+    - { name: 'hosting_feature_sync', value: '1' }
+    - { name: 'hosting_feature_tasks_extra', value: '1' }
+    - { name: 'hosting_feature_task_gc', value: '1' }
+    - { name: 'hosting_queue_civicrm_cron_enabled', value: '1' }
+    - { name: 'hosting_queue_civicrm_cron_frequency', value: '300' }
+    - { name: 'hosting_queue_civicrm_cron_items', value: '50' }
+    - { name: 'hosting_feature_fix_ownership', value: '1' }
+    - { name: 'hosting_feature_fix_permissions', value: '1' }
+  tags:
+    - aegir-settings
+    - aegir-fixownership
+
+- name: Aegir settings | Delete a few settings
+  become: true
+  become_user: aegir
+  shell: "drush @hostmaster vdel {{ item }} -y"
+  with_items:
+    - update_notify_emails
+
+# Generated with: openssl dhparam -check -5 4096 > /etc/nginx/params.4096
+# but it's way to slow to run on each server.
+#- name: Aegir | Copy the dhparam file for nginx https
+#  copy:
+#    src: /etc/ansible/files/etc/nginx/params.4096
+#    dest: /etc/nginx/params.4096
+#    owner: root
+#    group: root
+#    mode: '0640'
+#  tags:
+#    - aegir-dhparam
+
+# Disable nginx logging, since Aegir enables it per-host
+- name: Aegir | Disable global error.log
+  lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: 'access_log /var/log/nginx/access.log'
+    line: "        # access_log /var/log/nginx/access.log; # disabled by ansible"
+  notify: reload nginx
+  tags:
+    - aegir-nginx
+
+- name: Aegir | Disable global error.log
+  lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: 'error_log /var/log/nginx/error.log'
+    line: "        # error_log /var/log/nginx/error.log; # disabled by ansible"
+  notify: reload nginx
+  tags:
+    - aegir-nginx
+
+# Using lineinfile instead of a template so that we can still add other
+# settings in global.inc without ansible.
+- name: Aegir | Enable CiviCRM Native Gettext globally
+  lineinfile:
+    path: /var/aegir/config/includes/global.inc
+    regexp: 'CIVICRM_GETTEXT_NATIVE'
+    line: "define('CIVICRM_GETTEXT_NATIVE', 1);"
+  tags:
+    - aegir-globalinc
+
+- name: Aegir | Enable CiviCRM l10n basedir define
+  lineinfile:
+    path: /var/aegir/config/includes/global.inc
+    regexp: 'CIVICRM_L10N_BASEDIR'
+    line: "define('CIVICRM_L10N_BASEDIR', '/var/aegir/l10n-civicrm');"
+  tags:
+    - aegir-globalinc
+
+# deprecated?
+- name: Aegir | Set our CiviCRM l10n directory
+  lineinfile:
+    path: /var/aegir/config/includes/global.inc
+    regexp: 'global \$civicrm_paths;'
+    line: 'global $civicrm_paths;'
+  tags:
+    - aegir-globalinc
+
+- name: Aegir | Set our CiviCRM l10n directory
+  lineinfile:
+    path: /var/aegir/config/includes/global.inc
+    regexp: "\\$civicrm_paths\\['civicrm.l10n'\\]\\['path'\\]"
+    line: "$civicrm_paths['civicrm.l10n']['path'] = '/var/aegir/l10n-civicrm';"
+    insertafter: 'global \$civicrm_paths;'
+  tags:
+    - aegir-globalinc
+
+- name: Restart Aegir hosting queue
+  service: name=hosting-queued state=restarted
+
+# Requirements for the wkhtmltox 0.15 package
+- apt: name={{ item }} state=absent install_recommends=no
+  with_items:
+    - fontconfig
+    - xfonts-base
+    - xfonts-75dpi
+  tags:
+    - packages
+    - aegir
+    - aegir-wkhtmltopdf
+
+#- name: Install wkhtmltopdf from deb
+#  apt:
+#    deb: https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.5/wkhtmltox_0.12.5-1.stretch_amd64.deb
+#  tags:
+#    - aegir
+#    - aegir-wkhtmltopdf
+
+# c.f. https://www.drupal.org/project/hosting_civicrm/issues/2972031
+# We mostly execute these scripts so that it deploys the sudo files.
+# We override the shell scripts below.
+- name: Configure the fix-ownership scripts
+  shell: "bash {{ hostmaster_root.stdout }}/profiles/hostmaster/modules/aegir/hosting_tasks_extra/{{ item }}/scripts/install.sh"
+  with_items:
+    - fix_ownership
+  args:
+    creates: /etc/sudoers.d/fix-drupal-site-ownership
+  tags:
+    - aegir-fixownership
+
+- name: Configure the fix-permissions scripts
+  shell: "bash {{ hostmaster_root.stdout }}/profiles/hostmaster/modules/aegir/hosting_tasks_extra/{{ item }}/scripts/install.sh"
+  with_items:
+    - fix_permissions
+  args:
+    creates: /etc/sudoers.d/fix-drupal-site-permissions
+  tags:
+    - aegir-fixownership
+
+#
+# c.f. https://www.drupal.org/project/hosting_civicrm/issues/2972031
+#
+- name: Deploy our version of fix-drupal-site-permissions.sh
+  template: src=usr/local/bin/fix-drupal-site-permissions.sh dest=/usr/local/bin/fix-drupal-site-permissions.sh owner=root group=root mode=0755
+  tags:
+    - aegir-fixownership
+    - aegir-fixpermission-override
+
+- name: Deploy our fix-wordpress-permissions.sh
+  template: src=usr/local/bin/fix-wordpress-permissions.sh dest=/usr/local/bin/fix-wordpress-permissions.sh owner=root group=root mode=0755
+  tags:
+    - aegir-fixownership
+    - aegir-fixpermission-override
+
+- name: Deploy other Aegir helper scripts
+  template: src="usr/local/bin/{{ item }}" dest="/usr/local/bin/{{ item }}" owner=root group=root mode=0755
+  with_items:
+    - resync-drupal-db.sh
+    - resync-wordpress-db.sh
+    - aegir-ansible
+  tags:
+    - aegir-helper-scripts
+
+- name: Deploy our version of BOA's weekly.sh
+  template: src=usr/local/bin/aegir-weekly.sh dest=/usr/local/bin/aegir-weekly.sh owner=root group=root mode=0755
+  tags:
+    - aegir-weekly
+
+- name: Setup a cron for our version of BOA's weekly.sh
+  cron:
+    name="aegir-weekly"
+    minute="35"
+    hour="18"
+    hour="18"
+    weekday="6"
+    job="/usr/local/bin/aegir-weekly.sh"
+    cron_file="aegir-weekly"
+    user="root"
+    state=present
+  tags:
+    - aegir-weekly
+
+- name: Aegir | Deploy civicrm-pull-patch
+  template: src=usr/local/bin/civicrm-pull-patch dest=/usr/local/bin/civicrm-pull-patch owner=root group=root mode=0755
+  tags:
+    - aegir-civicrm-scripts
+
+- name: Aegir | Deploy cvlog
+  template: src=usr/local/bin/cvlog dest=/usr/local/bin/cvlog owner=root group=root mode=0755
+  tags:
+    - aegir-civicrm-scripts
+
+- name: Aegir | Deploy civicrm-update-translations
+  template: src=usr/local/bin/civicrm-update-translations dest=/usr/local/bin/civicrm-update-translations owner=root group=root mode=0755
+  tags:
+    - aegir-civicrm-scripts
+    - aegir-civicrm-translations
+
+- name: Aegir | Download CiviCRM translations
+  shell: "/usr/local/bin/civicrm-update-translations"
+  args:
+    creates: /var/aegir/l10n-civicrm
+  tags:
+    - aegir-civicrm-translations
+
+# Source: https://lab.symbiotic.coop/coopsymbiotic/aegir-helpers
+- name: Aegir | Download aegir-helpers
+  get_url:
+    url: "https://www.symbiotic.coop/sites/www.symbiotic.coop/files/ansible/aegir-helpers"
+    dest: /usr/local/bin/aegir-helpers
+    mode: '0755'
+  tags:
+    - aegir-civicrm-scripts
+    - aegir-helpers
+
+- include: letsencrypt.yml
+- include: settings-php.yml
+# - include: settings-mysql.yml
+
+- include: civicrm.yml
+  tags:
+    - aegir-civicrm
+
+- name: Aegir | Deploy our local.drushrc.php
+  template: src=var/aegir/dot.drush/local.drushrc.php dest=/var/aegir/.drush/local.drushrc.php owner=aegir group=aegir mode=0644
+  tags:
+    - aegir-drush
+
+- name: bash | Deploy bashrc and profile configurations
+  template: src=var/aegir/dot{{ item }} dest=/var/aegir/{{ item }} owner=aegir group=aegir mode=0644
+  with_items:
+    - .bashrc
+    - .profile
+  tags:
+    - aegir-bash
+
+- name: sudo | Deploy sudoers file for people who are allowed to sudo to aegir
+  template: src=etc/sudoers.d/symbiotic-aegir dest=/etc/sudoers.d/symbiotic-aegir owner=root group=root mode=0440
+  tags:
+    - aegir-sudoers
+
+- name: Deploy our duct tape script to safely reload nginx
+  template: src=usr/local/bin/aegir-reload-nginx.sh dest=/usr/local/bin/aegir-reload-nginx.sh owner=root group=root mode=0755
+  tags:
+    - aegir-sudoers
+
+- name: Deploy wrapper for getting systemd timer logs
+  template: src=usr/local/bin/aegir-systemctl-status dest=/usr/local/bin/aegir-systemctl-status owner=root group=root mode=0755
+  tags:
+    - aegir-sudoers
+
+- name: ssh | Create the .ssh directory for the Aegir user
+  file: path=/var/aegir/.ssh state=directory mode="{{ aegir_ssh_dir_permission }}" owner=aegir group="{{ aegir_ssh_dir_group }}"
+  tags:
+    - aegir-ssh
+    - aegir-civicrm-platform
+
+##
+## Platform management
+##
+#- name: ssh | Copy the ssh platform pub key
+#  copy: src="/etc/ansible/files/sshkeys/aegir/id_rsa_platforms.pub" dest=/var/aegir/.ssh/id_rsa_platforms.pub owner="aegir" group="aegir" mode=0600
+#  tags:
+#    - aegir-ssh
+#    - aegir-civicrm-platform
+#
+#- name: ssh | Copy the ssh platform priv key
+#  copy: src="/etc/ansible/files/sshkeys/aegir/id_rsa_platforms" dest=/var/aegir/.ssh/id_rsa_platforms owner="aegir" group="aegir" mode=0600
+#  tags:
+#    - aegir-ssh
+#    - aegir-civicrm-platform
+#
+#- name: ssh | Create the .ssh/config file if necessary
+#  file: path=/var/aegir/.ssh/config state=touch mode=0600 owner=aegir group=aegir
+#  tags:
+#    - aegir-ssh
+#    - aegir-civicrm-platform
+
+#- name: ssh | Copy ssh config for this key
+#  blockinfile:
+#    dest: /var/aegir/.ssh/config
+#    block: |
+#      Host git-alt.symbiotic.coop
+#        IdentityFile /var/aegir/.ssh/id_rsa_platforms
+#      Host lab-platform-key.symbiotic.coop
+#        HostName lab.symbiotic.coop
+#        IdentityFile /var/aegir/.ssh/id_rsa_platforms
+#  tags:
+#    - aegir-ssh
+#    - aegir-civicrm-platform
+#
+#- name: ssh | Add git ssh host key fingerprints to known_hosts to avoid prompts
+#  known_hosts:
+#    path='/etc/ssh/ssh_known_hosts'
+#    host='{{ item }}'
+#    key="{{ lookup('pipe', 'ssh-keyscan ' + item) }}"
+#  with_items:
+#    - lab.symbiotic.coop
+#    - lab-platform-key.symbiotic.coop
+#  tags:
+#    - aegir-ssh
+#    - aegir-civicrm-platform
+#
+
+# - name: platform | Configure the CiviCRM Drupal7 SymbioTIC platform
+#   shell: "drush provision-save @platform_drupald{{ aegir_platform_drupal_version }} --root=/var/aegir/platforms/drupald{{ aegir_platform_drupal_version }} --context_type=platform --repo_url=https://github.com/JMAConsulting/aegir-d7-platform.git --git_ref=main --deploy_from_git=1"
+#   args:
+#     creates: "/var/aegir/.drush/platform_drupald{{ aegir_platform_drupal_version }}.alias.drushrc.php"
+#   become: true
+#   become_user: aegir
+#   tags:
+#     - aegir-civicrm-platform
+
+# - name: platform | Trigger installation of the CiviCRM Drupal SymbioTIC platform
+#   shell: "drush @hostmaster hosting-import @platform_drupald{{ aegir_platform_drupal_version }}"
+#   args:
+#     creates: /var/aegir/platforms/drupald{{ aegir_platform_drupal_version }}
+#   become: true
+#   become_user: aegir
+#   tags:
+#     - aegir-civicrm-platform
+
+# [ML] Undfined variable mysqlbackup_backupdir (because it was moved from another role)
+# but also.. we're probably not going to keep local backups
+# - name: mysqlbackup | chgrp aegir if Aegir server
+#   file:
+#     path: "{{ mysqlbackup_backupdir }}"
+#     owner: root
+#     group: aegir
+#   when: "'symbiotic_aegir_vm' in group_names"
+#   tags:
+#     - mysqlbackup
+
+- include: sshfs-keys.yml
+  tags:
+    - aegir-sshfs
+
+- include: mysql-users.yml mysql_users="{{ aegir_mysql_users_ro }}" mysql_privs="SELECT,SHOW VIEW,PROCESS"
+  when: aegir_mysql_users_ro | length > 0
+  tags:
+    - aegir-mysql-users
+    - aegir-mysql-users-ro
+
+- include: mysql-users.yml mysql_users="{{ aegir_mysql_users_rw }}" mysql_privs="SELECT,SHOW VIEW,PROCESS,INSERT,UPDATE,DELETE,CREATE VIEW,REPLICATION CLIENT"
+  when: aegir_mysql_users_rw | length > 0
+  tags:
+    - aegir-mysql-users
+    - aegir-mysql-users-rw
+
+- include: mysql-replication.yml
+  when: aegir_mysql_replication_hosts | length > 0
+  tags:
+    - aegir-mysql-replication
