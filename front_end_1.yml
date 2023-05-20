@@ -1,0 +1,27 @@
+- hosts: percona_servers
+  vars_prompt:
+    - name: wp_db
+      prompt: Enter wordpress database name
+      private: no
+
+    - name: wp_user
+      prompt: Enter wordpress user
+      private: no
+
+    - name: crm_db
+      prompt: Enter civicrm database name
+      private: no
+
+    - name: crm_user
+      prompt: Enter civicrm user
+      private: no
+
+    - name: front_end_host
+      prompt: Enter the host and domain of the civipress frontend
+      private: no
+  gather_facts: True
+  become: yes
+  roles:
+    - front_end_1
+  tags:
+    - front-end-1

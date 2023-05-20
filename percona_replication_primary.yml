@@ -1,0 +1,11 @@
+- hosts: percona_servers
+  vars_prompt:
+    - name: secondary_host
+      prompt: Enter host and domain of the secondary percona server
+      private: no
+  gather_facts: True
+  become: yes
+  roles:
+    - percona_replication_primary
+  tags:
+    - percona-replication-primary

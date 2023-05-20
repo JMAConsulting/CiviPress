@@ -1,0 +1,22 @@
+- hosts: percona_servers
+  gather_facts: True
+  become: yes
+  vars_prompt:
+      - name: certbot_email
+        prompt: Enter cerbot email
+        private: no
+
+      - name: percona_server_number
+        prompt: Enter Percona Server Number (int)
+        private: no
+        
+      - name: percona_root_pass
+        prompt: "Only for secondary servers: Enter Primary Percona Root Password (cat /root/.mysql.root on Primary Percona server)"
+
+      - name: active_vault_address
+        prompt: Enter host and domain of active vault server
+        private: no
+  roles:
+    - percona_step_1
+  tags:
+    - percona-step-1

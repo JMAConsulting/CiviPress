@@ -1,0 +1,32 @@
+- hosts: aegir_servers
+  become: yes
+  vars_prompt:
+    - name: certbot_email
+      prompt: Enter cerbot email
+      private: no
+
+    - name: primary_percona_host
+      prompt: Enter primary percona host
+      private: no
+
+    - name: secondary_percona_host
+      prompt: Enter secondary percona host
+      private: no
+
+    - name: primary_percona_host_no_domain
+      prompt: Enter primary percona host with no domain (ie. d4 or d5)
+      private: no
+
+    - name: proxysql_pass
+      prompt: Enter the proxysql monitor user password (cat /root/.mysql.proxy_monitor on the primary percona server)
+
+    - name: orch_topo_pass
+      prompt: Enter the orchestrator topolgy user password (cat /root/.mysql.orch on the primary percona server)
+
+    - name: aegir_mysql_pass
+      prompt: Enter the password for the aegir root user (cat /root/.mysql.aegir_root)
+      private: yes
+  roles:
+    - aegir_2
+  tags:
+    - aegir_2

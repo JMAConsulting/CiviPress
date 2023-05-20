@@ -1,0 +1,32 @@
+preseed_parent: d
+preseed_hostname: d2
+preseed_domain: jmaconsulting.biz
+preseed_ram_mb: 2048
+preseed_macaddr: 
+preseed_vcpus: 2
+preseed_network_interface: enp1s0
+preseed_ipv4_address:
+preseed_ipv4_network: 
+preseed_ipv4_broadcast: 
+preseed_ipv4_netmask: 
+preseed_ipv4_gateway: 
+preseed_ipv4_bridged_gateway: 
+preseed_ipv4_nameservers: 
+preseed_ipv6_address: 
+preseed_ipv6_route: 
+preseed_ipv6_gateway: 
+preseed_language: en_US
+preseed_country: CA
+preseed_locale: en_US.UTF-8
+kvm_zfs_pool: zxd
+clamav_scan_hour: 6
+icinga2_display_name: "D2 host for vault 2 automation"
+icinga2_ipv4_address: 
+icinga2_ipv6_address: 
+cv_install: true
+ssh_users:
+  - luke
+root_sudoers:
+  - luke
+past_jma_staff: false
+icinga2_sites: false

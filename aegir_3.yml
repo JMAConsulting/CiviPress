@@ -1,0 +1,6 @@
+- hosts: aegir_servers
+  become: yes
+  roles:
+    - aegir_3
+  tags:
+    - aegir_3

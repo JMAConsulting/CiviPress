@@ -1,0 +1,122 @@
+# - hosts: percona_servers
+#   vars_prompt:
+#     - name: percona_server_number
+#       prompt: Enter Percona Server Number
+#       private: no
+
+#     - name: active_vault_address
+#       prompt: Enter host and domain of active vault server
+#       private: no
+#   gather_facts: True
+#   become: yes
+#   roles:
+#     - percona_step_2
+#   tags:
+#     - percona-step-2
+
+# - hosts: percona_servers
+#   vars_prompt:
+#     - name: percona_password
+#       prompt: Enter Percona Root Password
+
+#     - name: secondary_host
+#       prompt: Enter host and domain of the secondary percona server
+#       private: no
+
+#     - name: repl_pass
+#       prompt: Enter password for the percona replication user
+#   gather_facts: True
+#   become: yes
+#   roles:
+#     - percona_replication_primary
+#   tags:
+#     - percona-replication-primary
+
+# - hosts: percona_servers
+#   vars_prompt:
+#     - name: percona_password
+#       prompt: Enter Percona Root Password
+
+#     - name: primary_host
+#       prompt: Enter host and domain of the primary percona server
+#       private: no
+
+#     - name: repl_pass
+#       prompt: Enter password for the percona replication user
+#   gather_facts: True
+#   become: yes
+#   roles:
+#     - percona_replication_secondary
+#   tags:
+#     - percona-replication-secondary
+
+# - hosts: haxproxy_servers
+#   gather_facts: True
+#   become: yes
+#   roles:
+#     - haproxy
+#   tags:
+#     - haproxy
+
+# - hosts: percona_servers
+#   gather_facts: True
+#   environment:
+#     DEBIAN_FRONTEND: noninteractive
+#   become: yes
+#   roles:
+#     - percona_step_2
+#   tags:
+#     - percona-step-2
+
+- hosts: civipress_frontend_servers
+  vars_prompt:
+    - name: certbot_email
+      prompt: Enter cerbot email
+      private: no
+
+    - name: primary_percona_host
+      prompt: Enter primary percona host
+      private: no
+
+    - name: primary_percona_host_no_domain
+      prompt: Enter primary percona host with no domain (ie. d4 or d5)
+      private: no
+
+    - name: secondary_percona_host
+      prompt: Enter secondary percona host
+      private: no
+
+    - name: proxysql_pass
+      prompt: Enter the proxysql monitor user password (cat /root/.mysql.proxy_monitor on the primary percona server)
+
+    - name: orch_topo_pass
+      prompt: Enter the orchestrator topolgy user password (cat /root/.mysql.orch on the primary percona server)
+
+    - name: wp_db
+      prompt: Enter wordpress database name
+      private: no
+
+    - name: wp_user
+      prompt: Enter wordpress user
+      private: no
+
+    - name: crm_db
+      prompt: Enter civicrm database name
+      private: no
+
+    - name: crm_user
+      prompt: Enter civicrm user
+      private: no
+
+    - name: wp_user_pass
+      prompt: Enter the wp_user password (cat /root/.mysql.wp_user on the primary percona server)
+
+    - name: crm_user_pass
+      prompt: Enter the crm_user password (cat /root/.mysql.crm_user on the primary percona server)
+
+  gather_facts: True
+  become: yes
+  roles:
+    - front_end_2
+  tags:
+    - front-end_2

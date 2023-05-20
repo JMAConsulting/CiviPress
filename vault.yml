@@ -1,0 +1,12 @@
+- hosts: vault_servers
+  gather_facts: True
+  become: yes
+  vars_prompt:
+    - name: certbot_email
+      prompt: Enter cerbot email
+      private: no
+  roles:
+  roles:
+    - vault
+  tags:
+    - vault

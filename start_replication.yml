@@ -1,0 +1,7 @@
+- hosts: percona_servers
+  gather_facts: True
+  become: yes
+  roles:
+    - start_replication
+  tags:
+    - start-replication

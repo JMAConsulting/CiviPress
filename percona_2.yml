@@ -1,0 +1,29 @@
+- hosts: percona_servers
+  vars_prompt:
+    - name: percona_server_number
+      prompt: Enter Percona Server Number
+      private: no
+
+    - name: percona_rotate_key_pass
+      prompt: "Only for secondary servers: Enter Primary Percona Rotate Key User Password (cat /root/.mysql.tde_rotation on Primary Percona server)"
+
+    - name: percona_renew_tls_pass
+      prompt: "Only for secondary servers: Enter Primary Renew Vault Token User Password (cat /root/.mysql.renew_token on Primary Percona server)"
+
+    - name: active_vault_address
+      prompt: Enter host and domain of active vault server
+      private: no
+
+    - name: second_vault_address
+      prompt: Enter host and domain of second vault server
+      private: no
+
+    - name: third_vault_address
+      prompt: Enter host and domain of third vault server
+      private: no
+  gather_facts: True
+  become: yes
+  roles:
+    - percona_step_2
+  tags:
+    - percona-step-2

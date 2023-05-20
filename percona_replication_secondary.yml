@@ -1,0 +1,14 @@
+- hosts: percona_servers
+  vars_prompt:
+    - name: primary_host
+      prompt: Enter host and domain of the primary percona server
+      private: no
+
+    - name: repl_pass
+      prompt: Enter password for the percona replication user (cat /root/.mysql.repl on primary server)
+  gather_facts: True
+  become: yes
+  roles:
+    - percona_replication_secondary
+  tags:
+    - percona-replication-secondary

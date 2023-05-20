@@ -1,0 +1,34 @@
+preseed_parent: c
+preseed_hostname: ovh13
+preseed_domain: jmaconsulting.biz
+preseed_ram_mb: 4096
+preseed_macaddr:
+preseed_vcpus: 2
+preseed_network_interface: ens3
+preseed_ipv4_address: 
+preseed_ipv4_network: 
+preseed_ipv4_broadcast: 
+preseed_ipv4_netmask: 
+preseed_ipv4_gateway: 
+preseed_ipv4_bridged_gateway: 
+preseed_ipv4_nameservers: 
+preseed_ipv6_address: 
+preseed_ipv6_route: 
+preseed_ipv6_gateway: 
+preseed_language: en_US
+preseed_country: CA
+preseed_locale: en_US.UTF-8
+kvm_zfs_pool: zxc
+drush_install: true
+cv_install: true
+wp_cli_install: true
+clamav_scan_hour: 19
+ssh_users:
+  - luke
+root_sudoers:
+  - luke
+icinga2_http_host: "ovh13.jmaconsulting.biz"
+icinga2_display_name: "OVH13 jmaconsulting.biz"
+icinga2_ipv4_address: 
+icinga2_ipv6_address: 
+

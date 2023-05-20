@@ -1,0 +1,10 @@
+- hosts: percona_servers
+  become: yes
+  vars_prompt:
+    - name: front_end_host
+      prompt: Enter the host and domain of the civipress frontend
+      private: no
+  roles:
+    - aegir_1
+  tags:
+    - aegir_1
