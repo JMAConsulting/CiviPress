@@ -1,0 +1,76 @@
+---
+- name: civipress | configure percona
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "SET GLOBAL log_bin_trust_function_creators=1"
+  tags:
+    - front-end-1
+
+- name: percona | Generate a new password for proxysql monitor user
+  shell: pwgen 15 1 > /root/.mysql.proxy_monitor
+  tags:
+    - front-end-1
+
+- name: civipress | drop existing proxysql monitor user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'proxysql'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: civipress | create new monitor user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER 'proxysql'@'{{front_end_host}}' IDENTIFIED WITH mysql_native_password BY '`cat /root/.mysql.proxy_monitor`' REQUIRE SSL"
+  tags:
+    - front-end-1
+
+- name: civipress | create new monitor user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT USAGE ON *.* TO 'proxysql'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: percona | Generate a new password for orchestrator topology user
+  shell: pwgen 15 1 > /root/.mysql.orch
+  tags:
+    - front-end-1
+
+- name: civipress | drop existing orchestrator topology user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'orchestrator'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: civipress | create orchestrator topology user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER 'orchestrator'@'{{front_end_host}}' IDENTIFIED BY '`cat /root/.mysql.orch`' REQUIRE SSL"
+  tags:
+    - front-end-1
+
+- name: civipress | create orchestrator topology user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT SUPER, PROCESS, REPLICATION SLAVE, RELOAD ON *.* TO 'orchestrator'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: civipress | create orchestrator topology user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT SELECT ON mysql.slave_master_info TO 'orchestrator'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: percona | Generate a new password for aegir root user
+  shell: pwgen 15 1 > /root/.mysql.aegir_root
+  register: aegir_root_pass
+  tags:
+    - front-end-1
+
+- name: civipress | drop existing aegir user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'aegir_root'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
+
+- name: civipress | create new wordpress user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER 'aegir_root'@'{{front_end_host}}' IDENTIFIED WITH mysql_native_password BY '`cat /root/.mysql.aegir_root`'"
+  tags:
+    - front-end-1
+
+- name: civipress | create new wordpress user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT ALL PRIVILEGES ON *.* TO 'aegir_root'@'{{front_end_host}}' WITH GRANT OPTION"
+  tags:
+    - front-end-1
+
+- name: civipress | create new wordpress user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT SUPER ON *.* TO 'aegir_root'@'{{front_end_host}}'"
+  tags:
+    - front-end-1
