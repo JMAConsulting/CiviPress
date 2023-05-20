@@ -1,0 +1,413 @@
+---
+- name: Gather Facts for use by percona role
+  gather_facts:
+    parallel: yes
+  tags:
+    - percona-step-1
+
+- name: percona | Apt update
+  apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+  tags:
+    - percona-step-1
+
+- name: percona | Upgrade all apt packages
+  apt: upgrade=dist force_apt_get=yes
+  tags:
+    - percona-step-1
+
+- name: percona | Install apache
+  apt:
+    name: apache2
+    state: present
+  tags:
+    - percona-step-1
+
+- name: percona | Enable ufw
+  ufw:
+    state: enabled
+  tags:
+    - percona-step-1
+
+- name: percona | Allow ssh on ufw
+  ufw:
+    rule: allow
+    name: OpenSSH
+  tags:
+    - percona-step-1
+
+- name: percona | Allow http
+  ufw: proto=tcp port=80 rule=allow
+  tags:
+    - percona-step-1
+
+- name: percona | Allow https
+  ufw: proto=tcp port=443 rule=allow
+  tags:
+    - percona-step-1
+
+- name: percona | Allow apache
+  ufw: proto=tcp port=443 rule=allow
+  tags:
+    - percona-step-1
+
+- name: percona | Allow port 3306 for percona
+  ufw:
+    rule: allow
+    port: 3306
+  tags:
+    - percona-step-1
+
+- name: percona | Allow port 8080 for HAProxy
+  ufw:
+    rule: allow
+    port: 8080
+  tags:
+    - percona-step-1
+
+- name: percona | Allow port 8443 for HAProxy
+  ufw:
+    rule: allow
+    port: 8443
+  tags:
+    - percona-step-1
+
+- name: percona | Install snap
+  apt:
+    name: snapd
+    state: present
+  tags:
+    - percona-step-1
+
+- name: percona | Install core with snap
+  snap:
+    name: 
+      - core
+  tags:
+    - percona-step-1
+
+- name: percona | Update snap package
+  command: snap refresh core
+
+- name: percona | Install certbot with snap
+  snap:
+    name: 
+      - certbot
+    classic: yes
+  tags:
+    - percona-step-1
+
+- name: percona | Install packages
+  apt:
+    name: [
+      python3,
+      pip
+    ]
+    state: present
+    install_recommends: no
+  tags:
+    - percona-step-1
+
+- name: percona | Install packages
+  pip:
+    name: pexpect
+  tags:
+    - percona-step-1
+
+- name: percona | Check for previous certbot configuration
+  stat:
+    path: /var/lib/letsencrypt
+  register: letsencrypt_exists
+
+- name: percona | configure letsencrypt
+  command: sudo certbot --apache --non-interactive --agree-tos --domains {{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}} --email {{ certbot_email }}
+  tags:
+    - front-end
+  when: not letsencrypt_exists.stat.exists
+
+- name: percona | Install gnupg2, curl, pwgen
+  apt:
+    name: [
+      gnupg2,
+      curl,
+      pwgen,
+      python3,
+      python3-pymysql,
+      pip
+    ]
+    state: present
+    install_recommends: no
+  tags:
+    - percona-step-1
+
+- name: percona | Unintall previous installations of Percona
+  apt:
+    name: 'percona-server*'
+    state: absent
+    autoremove: yes
+  ignore_errors: yes
+  tags:
+    - percona-step-1
+
+- name: percona | delete data directory
+  file:
+    state: absent
+    path: /var/lib/mysql
+
+- name: percona | delete data directory
+  file:
+    state: absent
+    path: /var/lib/mysql-files
+
+- name: percona | delete data directory
+  file:
+    state: absent
+    path: /var/lib/mysql-keyring
+
+- name: percona | get percona apt package
+  shell: wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb
+  tags:
+    - percona-step-1
+
+- name: percona | dpkg percona package
+  shell: sudo dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
+  tags:
+    - percona-step-1
+
+- name: percona | configure percona install for MySQL 8.0
+  shell: sudo percona-release setup ps80
+  tags:
+    - percona-step-1
+
+- name: percona | Install percona
+  apt:
+    name: percona-server-server
+    state: present
+    install_recommends: no
+  tags:
+    - percona-step-1
+
+- name: percona | Configure my.cnf file (without SSL yet)
+  template:
+    src: my.cnf
+    dest: /etc/mysql/my.cnf
+    owner: mysql
+  tags:
+    - percona-step-3
+
+- name: percona | restart percona
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-step-2
+
+- name: percona | Generate a root password for MySQL
+  shell: pwgen 15 1 > /root/.mysql.root
+  when: "{{percona_server_number}} == 1"
+  tags:
+    - percona-step-1
+
+- name: percona | Set root password to be the same for secondary servers
+  shell: echo {{percona_root_pass}} > /root/.mysql.root
+  when: "not {{percona_server_number}} == 1"
+  tags:
+    - percona-step-1
+
+- name: percona | install cryptography
+  pip:
+    name: cryptography
+  tags:
+    - percona-step-1
+
+- name: percona | set the root password
+  shell: mysql -uroot -e "ALTER USER 'root'@'localhost' identified with 'caching_sha2_password' by '`cat /root/.mysql.root`'"
+  tags:
+    - percona-step-1
+
+- name: percona | get root password for mysql_secure_install
+  slurp:
+    src: /root/.mysql.root
+  register: mysql_root_pass
+
+- name: percona | remove test database
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_pass['content'] | b64decode | trim }}"
+    name: test
+    state: absent
+  tags:
+    - percona-step-1
+
+- name: percona | remove anonymous user
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_pass['content'] | b64decode | trim }}"
+    name: ''
+    state: absent
+  tags:
+    - percona-step-1
+
+- name: percona | remove remote root
+  community.mysql.mysql_query:
+    login_user: root
+    login_password: "{{ mysql_root_pass['content'] | b64decode | trim }}"
+    query:
+      - DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')
+  tags:
+    - percona-step-1
+
+- name: percona | Allow port 8100 for vault agent instance
+  ufw:
+    rule: allow
+    port: 8100
+  tags:
+    - percona-step-1
+
+- name: percona | install gpg
+  shell: sudo apt update && sudo apt install gpg
+  tags:
+    - percona-step-1
+
+- name: percona | Install wget
+  apt:
+    name: wget
+    state: present
+  tags:
+    - percona-step-1
+
+- name: percona | wget the vault release
+  shell: wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+  tags:
+    - percona-step-1
+
+- name: percona | gpg the vault keyring
+  shell: gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint
+  tags:
+    - percona-step-1
+
+- name: percona | configure vault source list
+  shell: echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+  tags:
+    - percona-step-1
+
+- name: percona | Apt update
+  apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+  tags:
+    - percona-step-1
+
+- name: percona | Install vault
+  shell: sudo apt update && sudo apt-get install vault
+  tags:
+    - percona-step-1
+
+- name: percona | Creates vault directory
+  file:
+    path: /var/lib/vault
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates vault agent directory
+  file:
+    path: /var/lib/vault/vault_agent
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Configure config file for vault agent
+  template:
+    src: vault-agent-config.hcl
+    dest: /var/lib/vault/vault_agent/vault-agent-config.hcl
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates pidfile
+  file:
+    path: /var/lib/vault/vault_agent/pidfile
+    state: touch
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates sink file
+  file:
+    path: /var/lib/vault/vault_agent/sink_file_wrapped_1.txt
+    state: touch
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates vault role file
+  file:
+    path: /var/lib/vault/vault_agent/vault_role_id
+    state: touch
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates vault token file
+  file:
+    path: /var/lib/vault/vault_agent/vault_token
+    state: touch
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: percona | Creates vault secret file
+  file:
+    path: /var/lib/vault/vault_agent/vault_wrapped_secret_id
+    state: touch
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - percona-step-1
+
+- name: Execute the following
+  debug:
+    msg: 
+      - "===== The following are to be done manually on the active vault server: ====="
+      - sudo bash
+      - bash /var/lib/vault/vault-env-exports.sh
+      - "* run the commands output by the bash script"
+      - vault login
+      - "* Use the root token to log into vault"
+      - vault auth enable approle
+      - cd /var/lib/vault
+      - vault write auth/approle/role/percona token_policies='percona_policy_1' secret_id_num_uses=0 token_bound_cidrs='[IP_block_containing_primary_percona_server], [IP_block_containing_secondary_percona_server]'
+      - vault read auth/approle/role/percona/role-id
+      - "* save role id"
+      - vault write auth/approle/role/percona/secret-id token_bound_cidrs='[IP_block_containing_primary_percona_server], [IP_block_containing_primary_secondary_server]'
+      - "* save secret id"
+  tags:
+    - vault
+
+- name: Execute the following
+  debug:
+    msg: 
+      - "===== The following are to be done manually on the percona server: ====="
+      - "* Copy and paste the AppRole Role ID from the previous step into vault_role_id"
+      - cd /var/lib/vault/vault_agent
+      - sudo nano /var/lib/vault/vault_agent/vault_role_id
+      - "* Copy and past AppRole Secret Id from the previous step into vault_wrapped_secret_id"
+      - sudo nano /var/lib/vault/vault_agent/vault_wrapped_secret_id
+      - vault agent -config=/var/lib/vault/vault_agent/vault-agent-config.hcl &
+  tags:
+    - vault

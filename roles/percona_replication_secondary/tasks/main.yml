@@ -1,0 +1,22 @@
+---
+- name: percona | stop percona server
+  shell: mysqladmin -uroot -p`cat /root/.mysql.root` shutdown
+  tags:
+    - percona-replication-secondary
+
+- name: percona | restart percona
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-replication-secondary
+
+- name: percona | join secondary server to primary
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CHANGE MASTER TO MASTER_HOST='{{primary_host}}', MASTER_USER='repl', MASTER_PASSWORD='{{repl_pass}}', MASTER_AUTO_POSITION = 1, MASTER_SSL=1"
+  tags:
+    - percona-replication-secondary
+
+- name: percona | start replication
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "START SLAVE"
+  tags:
+    - percona-replication-secondary

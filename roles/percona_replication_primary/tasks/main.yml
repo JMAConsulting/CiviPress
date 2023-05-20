@@ -1,0 +1,51 @@
+---
+- name: percona | stop percona server
+  shell: mysqladmin -uroot -p`cat /root/.mysql.root` shutdown
+  tags:
+    - percona-replication-primary
+
+- name: percona | restart percona
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-replication-primary
+
+- name: percona | Generate a replication user password for MySQL
+  shell: pwgen 15 1 > /root/.mysql.repl
+  tags:
+    - percona-step-2
+
+- name: percona | read replication user password
+  shell: cat /root/.mysql.repl
+  register: repl_pass
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'repl'@'{{secondary_host}}'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER IF NOT EXISTS 'repl'@'{{secondary_host}}' IDENTIFIED BY '{{ repl_pass.stdout }}'"
+  tags:
+    - percona-step-2
+
+- name: percona | create replication user for secondary percona server
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'{{secondary_host}}'"
+  tags:
+    - percona-replication-primary
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'repl'@'{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}'"
+  tags:
+    - percona-step-2
+
+- name: percona | create replication user for primarty percona server
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER IF NOT EXISTS 'repl'@'{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}' IDENTIFIED BY '{{ repl_pass.stdout }}'"
+  tags:
+    - percona-replication-primary
+
+- name: percona | create replication user for primary percona server
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}'"
+  tags:
+    - percona-replication-primary

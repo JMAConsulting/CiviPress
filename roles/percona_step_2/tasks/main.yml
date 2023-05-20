@@ -1,0 +1,440 @@
+---
+- name: percona | get percona apt package
+  shell: wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb
+  tags:
+    - percona-step-2
+
+- name: percona | dpkg percona package
+  shell: sudo dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
+  tags:
+    - percona-step-2
+
+- name: percona | configure percona install for MySQL 8.0
+  shell: sudo percona-release setup ps80
+  tags:
+    - percona-step-2
+
+- name: percona | Install percona client
+  apt:
+    name: [
+      percona-server-client,
+      libperconaserverclient21-dev,
+      python3-pexpect
+    ]
+    state: present
+    install_recommends: no
+  tags:
+    - percona-step-2
+
+- name: percona | Generate renew token user password for primary server
+  shell: pwgen 15 1 > /root/.mysql.renew_token
+  when: "{{percona_server_number}} == 1"
+  tags:
+    - percona-step-2
+
+- name: percona | Set renew token user password to be the same as the primary server
+  shell: echo {{percona_renew_tls_pass}} > /root/.mysql.renew_token
+  when: "not {{percona_server_number}} == 1"
+  tags:
+    - percona-step-2
+
+- name: percona | read renew vault token user password
+  shell: cat /root/.mysql.renew_token
+  register: renew_token_pass
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'renew_token_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER IF NOT EXISTS 'renew_token_user'@'localhost' IDENTIFIED BY '{{ renew_token_pass.stdout }}'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT DELETE ON mysql.plugin TO 'renew_token_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT INSERT ON mysql.plugin TO 'renew_token_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT CONNECTION_ADMIN ON *.* TO 'renew_token_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | Remove existing login path for token renewal user
+  expect:
+    command: mysql_config_editor remove --login-path=renew_token_user@localhost
+    responses:
+      password: "{{ renew_token_pass.stdout }}"
+  tags:
+    - percona-step-2
+
+- name: percona | Configure TDE user to prevent bash script from having password written in plain text
+  expect:
+    command: mysql_config_editor set --login-path=renew_token_user@localhost --host=localhost --user=renew_token_user --password
+    responses:
+      password: "{{ renew_token_pass.stdout }}"
+  tags:
+    - percona-step-2
+
+- name: percona | Create vault token renewal bash script
+  template:
+    src: renew_token.sh
+    dest: /var/lib/vault/vault_agent/renew_token.sh
+  tags:
+    - percona-step-2
+
+- name: percona | remove read permissions on all users except root
+  shell: chmod -r /var/lib/vault/vault_agent/renew_token.sh
+  tags:
+    - percona-step-2
+
+- name: percona | add vault token renewal bash script to cron the first day of every month at 12:00 am
+  cron:
+    name: "renew vault token"
+    minute: "0"
+    hour: "0"
+    day: "1"
+    month: "*"
+    job: "cd /var/lib/vault/vault_agent && /bin/bash /var/lib/vault/vault_agent/renew_token.sh"
+
+- name: percona | Create keyring_vault.conf file
+  template:
+    src: keyring_vault.conf
+    dest: /var/lib/mysql-keyring/keyring_vault.conf
+    owner: mysql
+  tags:
+    - percona-step-2
+
+- name: percona | Generate a renew tls user password for MySQL
+  shell: pwgen 15 1 > /root/.mysql.renew_tls
+  tags:
+    - percona-step-2
+
+- name: percona | read renew tls user password
+  shell: cat /root/.mysql.renew_tls
+  register: renew_tls_pass
+
+- name: percona | configure renew tls renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'renew_tls_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure renew tls renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER IF NOT EXISTS 'renew_tls_user'@'localhost' IDENTIFIED BY '{{ renew_tls_pass.stdout }}'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure renew tls renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT CONNECTION_ADMIN ON *.* TO 'renew_tls_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | Remove existing login path for tls user
+  expect:
+    command: mysql_config_editor remove --login-path=renew_tls_user@localhost
+    responses:
+      password: "{{ renew_tls_pass.stdout }}"
+  tags:
+    - percona-step-2
+
+- name: percona | Configure tls user to prevent bash script from having password written in plain text
+  expect:
+    command: mysql_config_editor set --login-path=renew_tls_user@localhost --host=localhost --user=renew_tls_user --password
+    responses:
+      password: "{{ renew_tls_pass.stdout }}"
+  tags:
+    - percona-step-2
+
+- name: percona | restart percona
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-step-2
+
+- name: percona | Create bash script for ssl renewal hook
+  template:
+    src: pre-mysql-deploy.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+    owner: root
+    mode: '0700'
+  tags:
+    - percona-step-2
+    
+- name: percona | run bash script once to inject the token into the keyring_vault plugin conf file
+  shell: bash /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+  tags:
+    - percona-step-2
+
+- name: percona | Configure my.cnf file to allow ssl
+  template:
+    src: my.cnf
+    dest: /etc/mysql/my.cnf
+    owner: mysql
+  tags:
+    - percona-step-2
+
+- name: percona | restart percona to allow keyring_vault plugin to start
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-step-2
+
+- name: percona | Edit bash script for ssl renewal hook
+  template:
+    src: mysql-deploy.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+    owner: root
+    mode: '0700'
+  tags:
+    - vault-step-4
+
+- name: percona | run bash script once to inject the token into the keyring_vault plugin conf file
+  shell: bash /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+  tags:
+    - percona-step-2
+
+- name: percona | Generate a tde key rotation user password for MySQL
+  shell: pwgen 15 1 > /root/.mysql.tde_rotation
+  when: "{{percona_server_number}} == 1"
+  tags:
+    - percona-step-2
+
+- name: percona | Set tde key rotation user password to be the same for secondary servers
+  shell: echo {{percona_rotate_key_pass}} > /root/.mysql.tde_rotation
+  when: "not {{percona_server_number}} == 1"
+  tags:
+    - percona-step-1
+
+- name: percona | read tde key rotation user password
+  shell: cat /root/.mysql.tde_rotation
+  register: rotate_key_pass
+
+- name: percona | configure tde key rotation renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "DROP USER IF EXISTS 'rotate_key_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | configure tde key rotation user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "CREATE USER IF NOT EXISTS 'rotate_key_user'@'localhost' IDENTIFIED BY '{{ rotate_key_pass.stdout }}'"
+  tags:
+    - percona-step-2
+  
+- name: percona | configure tde encryption key rotation user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "GRANT ENCRYPTION_KEY_ADMIN ON *.* TO 'rotate_key_user'@'localhost'"
+  tags:
+    - percona-step-2
+
+- name: percona | Remove existing login path for TDE user
+  command: mysql_config_editor remove --login-path=rotate_key_user@localhost
+  tags:
+    - percona-step-2
+
+- name: percona | Configure TDE user to prevent bash script from having password written in plain text
+  expect:
+    command: mysql_config_editor set --login-path=rotate_key_user@localhost --host=localhost --user=rotate_key_user --password
+    responses:
+      password: "{{ rotate_key_pass.stdout }}"
+  tags:
+    - percona-step-2
+
+- name: percona | Create TDE key rotation bash script
+  template:
+    src: rotate_master_key.sh
+    dest: /etc/mysql/rotate_master_key.sh
+    owner: root
+    mode: '0700'
+  tags:
+    - percona-step-2
+
+- name: percona | add tde key rotation bash script to cron every 5 minutes
+  cron:
+    name: "renew vault token"
+    minute: "*/5"
+    hour: "*"
+    day: "*"
+    month: "*"
+    job: "cd /etc/mysql && /bin/bash /etc/mysql/rotate_master_key.sh"
+  tags:
+    - percona-step-2
+  
+- name: percona | xtrabackup pre install config
+  shell: percona-release enable-only tools release
+  tags:
+    - percona-step-2
+
+- name: percona | Install percona xtrabackup
+  apt:
+    name: [
+      percona-xtrabackup-80,
+      qpress
+    ]
+    state: present
+    install_recommends: no
+  tags:
+    - percona-step-2
+
+- name: percona | Create percona backup directory
+  file:
+    path: /data
+    state: directory
+    owner: mysql
+    mode: '0700'
+  tags:
+    - percona-step-2
+
+- name: percona | Create percona backup directory
+  file:
+    path: /data/backups
+    state: directory
+    owner: mysql
+    mode: '0700'
+  tags:
+    - percona-step-2
+
+- name: percona | Create percona backup directory
+  file:
+    path: /data/backups/mysql
+    state: directory
+    owner: mysql
+    mode: '0700'
+
+  tags:
+    - percona-step-2
+
+- name: percona | Configure my.cnf file to allow ssl
+  template:
+    src: my_ssl.cnf
+    dest: /etc/mysql/my.cnf
+    owner: mysql
+  tags:
+    - percona-step-2
+
+- name: percona | restart percona
+  service:
+    name: mysql
+    state: restarted
+  tags:
+    - percona-step-2
+
+- name: haproxy | install software-properties-common
+  apt:
+    name: software-properties-common
+    state: present
+    install_recommends: no
+  tags:
+    - haproxy
+
+- name: haproxy | Install socat
+  apt:
+    name: socat
+    state: present
+  tags:
+    - percona-step-2
+
+- name: Add haproxy repository into sources list
+  apt_repository:
+    repo: ppa:vbernat/haproxy-2.4
+    state: present
+  tags:
+    - haproxy
+
+- name: haproxy | install haproxy
+  shell: sudo apt install haproxy=2.4.\* -y
+  tags:
+    - haproxy
+
+- name: haproxy | Create haproxy directory
+  file:
+    path: /var/lib/haproxy
+    state: directory
+    owner: haproxy
+    group: haproxy
+  tags:
+    - haproxy
+
+- name: haproxy | Create haproxy certs directory
+  file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: haproxy
+    group: haproxy
+  tags:
+    - haproxy
+
+- name: haproxy | modify existing ssl renewal bash script
+  template:
+    src: mysql-deploy-haproxy.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+    owner: root
+  tags:
+    - haproxy
+    
+- name: haproxy | Change bash script permissions
+  file:
+    path: /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+    mode: '0700'
+  tags:
+    - percona-step-2
+
+- name: haproxy | run bash script once to load the cert and key into the directory
+  shell: bash /etc/letsencrypt/renewal-hooks/deploy/mysql-deploy.sh
+  tags:
+    - haproxy
+
+- name: haproxy | Create haproxy directory where ssl cert and key are loaded from
+  file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: haproxy
+    group: haproxy
+  tags:
+    - haproxy
+
+- name: haproxy | Edit the config file
+  template:
+    src: haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg
+    owner: haproxy
+    group: haproxy
+
+- name: haproxy | restart haproxy
+  service:
+    name: haproxy
+    state: restarted
+
+- name: haproxy | Edit keyring_vault.conf file to use haproxy
+  template:
+    src: keyring_vault_haproxy.conf
+    dest: /var/lib/mysql-keyring/keyring_vault.conf
+    owner: mysql
+    group: mysql
+  tags:
+    - haproxy
+
+- name: haproxy | run bash script once to reload the token
+  shell: bash /var/lib/vault/vault_agent/renew_token.sh
+  tags:
+    - haproxy
+
+# - name: percona | Configure config file for vault agent to use haproxy
+#   template:
+#     src: vault-agent-config.hcl
+#     dest: /var/lib/vault/vault_agent/vault-agent-config.hcl
+#     owner: vault
+#     group: vault
+#   tags:
+#     - percona-step-1
+
+- name: haproxy | run bash script once to reload the token
+  shell: bash /var/lib/vault/vault_agent/renew_token.sh
+  tags:
+    - haproxy

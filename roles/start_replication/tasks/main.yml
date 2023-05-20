@@ -1,0 +1,5 @@
+---
+- name: percona | configure vault token renewal user
+  shell: mysql -uroot -p`cat /root/.mysql.root` -e "SET @@GLOBAL.read_only = OFF"
+  tags:
+    - start-replication

@@ -1,0 +1,225 @@
+---
+- name: Gather Facts for use by vault role
+  gather_facts:
+    parallel: yes
+  tags:
+    - vault
+
+- name: vault | Apt update
+  apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+  tags:
+    - vault
+
+- name: vault | Upgrade all apt packages
+  apt: upgrade=dist force_apt_get=yes
+  tags:
+    - vault
+
+- name: vault | Install apache
+  apt:
+    name: apache2
+    state: present
+  tags:
+    - vault
+
+- name: vault | Enable ufw
+  ufw:
+    state: enabled
+  tags:
+    - vault
+
+- name: vault | Allow ssh on ufw
+  ufw:
+    rule: allow
+    name: OpenSSH
+  tags:
+    - vault
+
+- name: vault | Allow http
+  ufw: proto=tcp port=80 rule=allow
+  tags:
+    - vault
+
+- name: vault | Allow https
+  ufw: proto=tcp port=443 rule=allow
+  tags:
+    - vault
+
+- name: vault | Allow apache
+  ufw: proto=tcp port=443 rule=allow
+  tags:
+    - vault
+
+- name: vault | Allow port 8200 for vault instance
+  ufw:
+    rule: allow
+    port: 8200
+  tags:
+    - vault
+
+- name: vault | Allow port 8201 for vault HA cluster API
+  ufw:
+    rule: allow
+    port: 8201
+  tags:
+    - vault
+
+- name: vault | Install snap
+  apt:
+    name: snapd
+    state: present
+  tags:
+    - vault
+
+- name: vault | Install core with snap
+  snap:
+    name: 
+      - core
+  tags:
+    - vault
+
+- name: vault | Update snap package
+  command: snap refresh core
+
+- name: vault | Install certbot with snap
+  snap:
+    name: 
+      - certbot
+    classic: yes
+  tags:
+    - vault
+
+- name: vault | Check for previous certbot configuration
+  stat:
+    path: /var/lib/letsencrypt
+  register: letsencrypt_exists
+
+- name: vault | configure letsencrypt
+  command: sudo certbot --apache --non-interactive --agree-tos --domains {{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}} --email {{ certbot_email }}
+  tags:
+    - front-end
+  when: not letsencrypt_exists.stat.exists
+
+- name: vault | install gpg
+  shell: sudo apt update && sudo apt install gpg
+  tags:
+    - vault
+
+- name: vault | Install wget
+  apt:
+    name: wget
+    state: present
+  tags:
+    - vault
+
+- name: vault | wget the vault release
+  shell: wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+  tags:
+    - vault
+
+- name: vault | gpg the vault keyring
+  shell: gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint
+  tags:
+    - vault
+
+- name: vault | configure vault source list
+  shell: echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+  tags:
+    - vault
+
+- name: vault | Apt update
+  apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+  tags:
+    - vault
+
+- name: vault | Install vault
+  shell: sudo apt update && sudo apt-get install vault
+  tags:
+    - vault
+
+- name: vault | remove existing directory
+  file:
+    state: absent
+    path: /var/lib/vault
+
+- name: vault | Creates vault directory
+  file:
+    path: /var/lib/vault
+    state: directory
+    owner: vault
+    group: vault
+  tags:
+    - vault
+
+- name: vault | Creates vault directory
+  file:
+    path: /var/lib/vault/data
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0700'
+  tags:
+    - vault
+
+- name: vault | Specify the vault configuration
+  template:
+    src: config.hcl
+    dest: /etc/vault.d/vault.hcl
+    owner: vault
+    group: vault
+  tags:
+    - vault
+
+- name: vault | Create bash script for ssl renewal hook
+  template:
+    src: vault-deploy-pre.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/vault-deploy.sh
+    owner: root
+    group: root
+    mode: '0700'
+  tags:
+    - vault
+
+- name: vault | Create bash script to automate env variable exports
+  template:
+    src: vault-env-exports.sh
+    dest: /var/lib/vault/vault-env-exports.sh
+  tags:
+    - vault
+
+- name: vault | Create a vault policy for Percona
+  template:
+    src: percona_policy.hcl
+    dest: /var/lib/vault/percona_policy.hcl
+    owner: vault
+  tags:
+    - vault
+
+- name: Execute the following
+  debug:
+    msg: 
+      - "===== The following are to be done manually on the first vault server: ====="
+      - sudo bash
+      - vault server -config=/etc/vault.d/vault.hcl &
+      - export VAULT_ADDR='https://{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}:8200' 
+      - export VAULT_CACERT='/etc/letsencrypt/live/{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}/fullchain.pem'
+      - vault operator init
+      - "* Store the keys and root token in 1Password"
+      - vault operator unseal
+      - "* Use the key shares to unseal vault"
+      - vault login
+      - "* Use the root token to log into vault"
+      - vault secrets enable -version=2 kv
+      - vault audit enable file file_path=/vault_server/vault-audit.log
+      - cd /var/lib/vault
+      - vault policy write percona_policy_1 percona_policy.hcl
+      - "===== The following are to be done manually on subsequent vault servers: ====="
+      - sudo bash
+      - vault server -config=/etc/vault.d/vault.hcl &
+      - export VAULT_ADDR='https://{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}:8200'
+      - export VAULT_CACERT='/etc/letsencrypt/live/{{hostvars[inventory_hostname]['preseed_hostname']}}.{{hostvars[inventory_hostname]['preseed_domain']}}/fullchain.pem'
+      - vault operator raft join https://d1.jmaconsulting.biz:8200
+      - vault operator unseal
+      - "* Use the key shares to unseal vault"
+  tags:
+    - vault

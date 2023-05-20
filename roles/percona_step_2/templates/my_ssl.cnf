@@ -1,0 +1,38 @@
+[mysql]
+port                           = 3306
+
+[mysqld]
+ssl_ca=/var/lib/mysql/cacert.pem
+ssl_cert=/var/lib/mysql/fullchain.pem
+ssl_key=/var/lib/mysql/privkey.pem
+
+early-plugin-load="keyring_vault=keyring_vault.so"
+loose-keyring_vault_config="/var/lib/mysql-keyring/keyring_vault.conf"
+event_scheduler=OFF
+
+server-id = {{percona_server_number}}
+log-bin = mysql-bin
+binlog_format = row
+log_bin_trust_function_creators=1
+gtid-mode=ON
+enforce-gtid-consistency=ON
+log-slave-updates
+skip-slave-start
+read_only=1
+require_secure_transport=ON
+
+# INNODB #
+innodb_flush_method            = O_DIRECT
+innodb_log_files_in_group      = 2
+innodb_log_file_size           = 128M
+innodb_flush_log_at_trx_commit = 1
+innodb_file_per_table          = 1
+innodb_buffer_pool_size        = 2G
+
+[client]
+ssl-ca=/var/lib/mysql/cacert.pem
+ssl-cert=/var/lib/mysql/fullchain.pem
+ssl-key=/var/lib/mysql/privkey.pem
+
+[xtrabackup]
+target_dir = /data/backups/mysql/
