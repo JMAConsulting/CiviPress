@@ -8,4 +8,4 @@ This repository contains all the ansible configuration needed to configure three
 2. Ensure that you have ansible installed locally or wherever you are running this from.
 3. Update the production file with the information about which groups the new server should be associated and which roles it will execute
 4. Run ansible-galaxy collection install community.mysql
-5. Follow the documentation [here](https://lab.jmaconsulting.biz/jma/civipress/civipress/-/wikis/200_Automated_Scripts) to proceed with the installation
+5. Follow the documentation [here]([https://lab.jmaconsulting.biz/jma/civipress/civipress/-/wikis/200_Automated_Scripts) to proceed with the installation](https://github.com/JMAConsulting/CiviPress/wiki/201_Automated-Scripts)
